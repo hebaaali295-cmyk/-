@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tic Tac Toe – Online Multiplayer</title>
+    <!-- لوحة اللعبة تعمل بتقنية PeerJS للاتصال المباشر -->
+    <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
+    <style>
+        :root {
+            --bg: #1a1a2e;
+            --surface: #16213e;
+            --cell-bg: #0f3460;
+            --cell-hover: #1a4a8a;
+            --x-color: #e94560;
+            --o-color: #f5c518;
+            --text: #eee;
+            --text-muted: #aaa;
+            --win-glow: #00ff88;
+            --shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            --border-radius: 16px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: var(--bg);
+            background-image:
+                radial-gradient(ellipse at 20% 50%, rgba(233, 68, 96, 0.08) 0%, transparent 60%),
+                radial-gradient(ellipse at 80% 20%, rgba(245, 197, 24, 0.06) 0%, transparent 60%),
+                radial-gradient(ellipse at 50% 80%, rgba(15, 52, 96, 0.4) 0%, transparent 60%);
+            font-family: 'Segoe UI', 'Inter', system-ui, -apple-system, sans-serif;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .game-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 24px;
+            padding: 36px 32px;
+            background: var(--surface);
+            border-radius: 24px;
+            box-shadow: var(--shadow), 0 0 0 1px rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            width: 380px;
+            max-width: 95vw;
+        }
+
+        .header {
+            text-align: center;
+        }
+
+        .title {
+            font-size: 2.4rem;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+            background: linear-gradient(135deg, #e94560 0%, #f5c518 50%, #e94560 100%);
+            background-size: 200% 200%;
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: shimmer 3s ease-in-out infinite;
+            margin-bottom: 6px;
+        }
+
+        @keyframes shimmer {
+            0%,
+            100% {
+                background-position: 0% 50%;
+            }
+            50% {
+                background-position: 100% 50%;
+            }
+        }
+
+        .status {
+            font-size: 1.1rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            letter-spacing: 0.03em;
+            min-height: 26px;
+            transition: color 0.3s ease;
+        }
+
+        .status .player-indicator {
+            font-weight: 700;
+            font-size: 1.25rem;
+            transition: color 0.3s ease;
+        }
+
+        .player-indicator.x-turn {
+            color: var(--x-color);
+        }
+        .player-indicator.o-turn {
+            color: var(--o-color);
+        }
+        .player-indicator.win-highlight {
+            color: var(--win-glow);
+            animation: pulse-glow 0.6s ease-in-out infinite alternate;
+        }
+
+        @keyframes pulse-glow {
+            0% {
+                text-shadow: 0 0 8px var(--win-glow), 0 0 16px var(--win-glow);
+            }
+            100% {
+                text-shadow: 0 0 18px var(--win-glow), 0 0 36px var(--win-glow);
+            }
+        }
+
+        .room-section {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .room-row {
+            display: flex;
+            gap: 10px;
+        }
+        .room-input {
+            flex: 1;
+            padding: 10px 14px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text);
+            font-size: 0.95rem;
+            outline: none;
+            transition: border 0.2s;
+        }
+        .room-input:focus {
+            border-color: var(--x-color);
+        }
+        .btn {
+            padding: 10px 18px;
+            font-weight: 600;
+            border-radius: 10px;
+            border: none;
+            cursor: pointer;
+            font-size: 0.9rem;
+            letter-spacing: 0.03em;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            background: var(--cell-bg);
+            color: var(--text);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+        .btn:hover {
+            background: var(--cell-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #e94560 0%, #c0392b 100%);
+            color: white;
+            box-shadow: 0 6px 20px rgba(233, 68, 96, 0.35);
+        }
+        .btn-primary:hover {
+            box-shadow: 0 10px 28px rgba(233, 68, 96, 0.5);
+        }
+        .btn-small {
+            padding: 6px 14px;
+            font-size: 0.8rem;
+        }
+        .room-id-display {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text);
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 8px 12px;
+            word-break: break-all;
+            text-align: center;
+        }
+        .note {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            text-align: center;
+        }
+
+        .board {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: repeat(3, 1fr);
+            gap: 10px;
+            width: 300px;
+            height: 300px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: var(--border-radius);
+            padding: 10px;
+            box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.3);
+        }
+
+        .cell {
+            background: var(--cell-bg);
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 3rem;
+            font-weight: 700;
+            color: transparent;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            position: relative;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+            aspect-ratio: 1;
+        }
+
+        .cell:hover:not(.taken):not(.disabled) {
+            background: var(--cell-hover);
+            transform: translateY(-3px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+        }
+
+        .cell.disabled {
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .cell.x-mark {
+            color: var(--x-color);
+            text-shadow: 0 0 20px rgba(233, 68, 96, 0.6), 0 0 40px rgba(233, 68, 96, 0.3);
+            animation: pop-in 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+
+        .cell.o-mark {
+            color: var(--o-color);
+            text-shadow: 0 0 20px rgba(245, 197, 24, 0.6), 0 0 40px rgba(245, 197, 24, 0.3);
+            animation: pop-in 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+
+        .cell.winning-cell {
+            background: #1a3a2a;
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.5), 0 0 50px rgba(0, 255, 136, 0.25);
+            animation: win-bounce 0.5s ease-in-out infinite alternate;
+            z-index: 1;
+        }
+
+        @keyframes pop-in {
+            0% {
+                transform: scale(0.3);
+                opacity: 0;
+            }
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        @keyframes win-bounce {
+            0% {
+                transform: scale(1);
+            }
+            100% {
+                transform: scale(1.06);
+            }
+        }
+
+        .btn-reset {
+            padding: 12px 36px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            background: linear-gradient(135deg, #e94560 0%, #c0392b 100%);
+            color: #fff;
+            transition: all 0.3s;
+            box-shadow: 0 6px 20px rgba(233, 68, 96, 0.35);
+            text-transform: uppercase;
+        }
+        .btn-reset:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 28px rgba(233, 68, 96, 0.5);
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        @media (max-width: 450px) {
+            .board {
+                width: 260px;
+                height: 260px;
+            }
+            .cell {
+                font-size: 2.4rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container" id="gameContainer">
+        <div class="header">
+            <h1 class="title">Tic Tac Toe</h1>
+            <p class="status" id="status">Connect to play online</p>
+        </div>
+
+        <div class="room-section" id="roomSection">
+            <button class="btn btn-primary" id="btnCreateRoom">Create Room</button>
+            <div class="room-row">
+                <input class="room-input" type="text" id="roomIdInput" placeholder="Paste friend's Room ID">
+                <button class="btn" id="btnJoinRoom">Join</button>
+            </div>
+            <div id="roomInfo" class="hidden">
+                <p class="room-id-display" id="roomIdDisplay"></p>
+                <p class="note" id="connectionStatus">Waiting for opponent...</p>
+            </div>
+        </div>
+
+        <div id="gameArea" class="hidden" style="display: flex; flex-direction: column; align-items: center; gap: 20px;">
+            <div class="board" id="board">
+                <button class="cell" data-index="0" aria-label="Cell 1"></button>
+                <button class="cell" data-index="1" aria-label="Cell 2"></button>
+                <button class="cell" data-index="2" aria-label="Cell 3"></button>
+                <button class="cell" data-index="3" aria-label="Cell 4"></button>
+                <button class="cell" data-index="4" aria-label="Cell 5"></button>
+                <button class="cell" data-index="5" aria-label="Cell 6"></button>
+                <button class="cell" data-index="6" aria-label="Cell 7"></button>
+                <button class="cell" data-index="7" aria-label="Cell 8"></button>
+                <button class="cell" data-index="8" aria-label="Cell 9"></button>
+            </div>
+            <button class="btn-reset" id="btnReset">New Game</button>
+        </div>
+        <p class="note" style="margin-top: 4px;">⚡ Works over internet – share the Room ID</p>
+    </div>
+
+    <script>
+        (function() {
+            const roomSection = document.getElementById('roomSection');
+            const gameArea = document.getElementById('gameArea');
+            const boardEl = document.getElementById('board');
+            const cellEls = boardEl.querySelectorAll('.cell');
+            const statusEl = document.getElementById('status');
+            const btnReset = document.getElementById('btnReset');
+            const btnCreateRoom = document.getElementById('btnCreateRoom');
+            const btnJoinRoom = document.getElementById('btnJoinRoom');
+            const roomIdInput = document.getElementById('roomIdInput');
+            const roomInfo = document.getElementById('roomInfo');
+            const roomIdDisplay = document.getElementById('roomIdDisplay');
+            const connectionStatus = document.getElementById('connectionStatus');
+
+            const WINNING_COMBOS = [
+                [0, 1, 2],
+                [3, 4, 5],
+                [6, 7, 8],
+                [0, 3, 6],
+                [1, 4, 7],
+                [2, 5, 8],
+                [0, 4, 8],
+                [2, 4, 6]
+            ];
+
+            let board = Array(9).fill(null);
+            let myMark = null;
+            let currentPlayer = 'X';
+            let gameActive = false;
+            let winningCombo = null;
+
+            let peer = null;
+            let conn = null;
+            let roomId = null;
+
+            function updateStatusText(text, spanClass = '', glow = false) {
+                statusEl.innerHTML = text;
+                const indicator = statusEl.querySelector('.player-indicator');
+                if (indicator) {
+                    indicator.className = 'player-indicator';
+                    if (spanClass) indicator.classList.add(spanClass);
+                    if (glow) indicator.classList.add('win-highlight');
+                }
+            }
+
+            function renderBoard() {
+                cellEls.forEach((cell, idx) => {
+                    const mark = board[idx];
+                    cell.className = 'cell';
+                    cell.textContent = '';
+                    if (mark === 'X') {
+                        cell.classList.add('taken', 'x-mark');
+                        cell.textContent = 'X';
+                    } else if (mark === 'O') {
+                        cell.classList.add('taken', 'o-mark');
+                        cell.textContent = 'O';
+                    }
+                    if (winningCombo && winningCombo.includes(idx)) {
+                        cell.classList.add('winning-cell');
+                    }
+                    const canMove = gameActive && currentPlayer === myMark && !board[idx];
+                    if (!canMove) {
+                        cell.classList.add('disabled');
+                    }
+                });
+            }
+
+            function checkWin(player) {
+                for (const combo of WINNING_COMBOS) {
+                    const [a, b, c] = combo;
+                    if (board[a] === player && board[b] === player && board[c] === player) {
+                        return combo;
+                    }
+                }
+                return null;
+            }
+
+            function isBoardFull() {
+                return board.every(cell => cell !== null);
+            }
+
+            function endGame(winner) {
+                gameActive = false;
+                if (winner) {
+                    winningCombo = checkWin(winner);
+                    const spanClass = winner === 'X' ? 'x-turn' : 'o-turn';
+                    updateStatusText(
+                        `🎉 Player <span class="player-indicator ${spanClass} win-highlight">${winner}</span> Wins!`,
+                        spanClass,
+                        true
+                    );
+                } else {
+                    winningCombo = null;
+                    updateStatusText("🤝 It's a Draw!");
+                }
+                renderBoard();
+            }
+
+            function applyRemoteMove(index) {
+                if (!gameActive) return;
+                if (board[index] !== null) return;
+
+                const movePlayer = currentPlayer;
+                board[index] = movePlayer;
+                renderBoard();
+
+                const combo = checkWin(movePlayer);
+                if (combo) {
+                    endGame(movePlayer);
+                    return;
+                }
+                if (isBoardFull()) {
+                    endGame(null);
+                    return;
+                }
+
+                currentPlayer = movePlayer === 'X' ? 'O' : 'X';
+                const nextClass = currentPlayer === 'X' ? 'x-turn' : 'o-turn';
+                updateStatusText(
+                    `Player <span class="player-indicator ${nextClass}">${currentPlayer}</span>'s turn`,
+                    nextClass
+                );
+                renderBoard();
+            }
+
+            function makeMove(index) {
+                if (!gameActive) return;
+                if (currentPlayer !== myMark) return;
+                if (board[index] !== null) return;
+
+                if (conn && conn.open) {
+                    conn.send({ type: 'move', index: index });
+                }
+
+                applyRemoteMove(index);
+            }
+
+            function resetGame() {
+                board = Array(9).fill(null);
+                currentPlayer = 'X';
+                gameActive = true;
+                winningCombo = null;
+                renderBoard();
+                const indicatorClass = myMark === 'X' ? 'x-turn' : 'o-turn';
+                updateStatusText(
+                    `Player <span class="player-indicator ${indicatorClass}">${currentPlayer}</span>'s turn`,
+                    indicatorClass
+                );
+            }
+
+            function startGame(mark) {
+                myMark = mark;
+                gameActive = true;
+                currentPlayer = 'X';
+                winningCombo = null;
+                board = Array(9).fill(null);
+                roomSection.classList.add('hidden');
+                gameArea.classList.remove('hidden');
+                gameArea.style.display = 'flex';
+                renderBoard();
+                const indicatorClass = 'x-turn';
+                updateStatusText(
+                    `You are <span class="player-indicator ${myMark === 'X' ? 'x-turn' : 'o-turn'}">${myMark}</span>. Player <span class="player-indicator ${indicatorClass}">X</span> starts.`,
+                    indicatorClass
+                );
+            }
+
+            function setupPeer() {
+                peer = new Peer();
+
+                peer.on('open', (id) => {
+                    if (roomId === null) {
+                        roomId = id;
+                        roomIdDisplay.textContent = roomId;
+                        roomInfo.classList.remove('hidden');
+                        connectionStatus.textContent = 'Waiting for opponent... Share the Room ID above.';
+                    }
+                });
+
+                peer.on('connection', (incomingConn) => {
+                    if (conn) {
+                        incomingConn.close();
+                        return;
+                    }
+                    conn = incomingConn;
+                    setupConnection();
+                    startGame('X');
+                });
+
+                peer.on('error', (err) => {
+                    console.error('Peer error:', err);
+                    updateStatusText('Connection error. Please refresh and try again.');
+                });
+            }
+
+            function setupConnection() {
+                conn.on('open', () => {
+                    connectionStatus.textContent = 'Connected! Starting game...';
+                    if (myMark === null) {
+                        startGame('O');
+                    }
+                });
+
+                conn.on('data', (data) => {
+                    if (data.type === 'move') {
+                        applyRemoteMove(data.index);
+                    } else if (data.type === 'reset') {
+                        resetGame();
+                    }
+                });
+
+                conn.on('close', () => {
+                    updateStatusText('Opponent disconnected. Refresh to play again.');
+                    gameActive = false;
+                    renderBoard();
+                });
+            }
+
+            function createRoom() {
+                if (peer) peer.destroy();
+                peer = null;
+                conn = null;
+                roomId = null;
+                myMark = null;
+                setupPeer();
+            }
+
+            function joinRoom() {
+                const id = roomIdInput.value.trim();
+                if (!id) return alert('Please enter a Room ID.');
+                if (peer) peer.destroy();
+                peer = null;
+                conn = null;
+                roomId = id;
+                myMark = null;
+
+                peer = new Peer();
+                peer.on('open', () => {
+                    conn = peer.connect(id, { reliable: true });
+                    setupConnection();
+                    roomInfo.classList.remove('hidden');
+                    roomIdDisplay.textContent = `Joining room: ${id}`;
+                    connectionStatus.textContent = 'Connecting...';
+                });
+
+                peer.on('error', (err) => {
+                    console.error(err);
+                    updateStatusText('Failed to connect. Check the Room ID and try again.');
+                });
+            }
+
+            btnCreateRoom.addEventListener('click', createRoom);
+            btnJoinRoom.addEventListener('click', joinRoom);
+            roomIdInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') joinRoom();
+            });
+
+            boardEl.addEventListener('click', (e) => {
+                const cell = e.target.closest('.cell');
+                if (!cell) return;
+                const index = parseInt(cell.getAttribute('data-index'), 10);
+                makeMove(index);
+            });
+
+            btnReset.addEventListener('click', () => {
+                if (conn && conn.open) {
+                    conn.send({ type: 'reset' });
+                }
+                resetGame();
+            });
+
+            setupPeer();
+        })();
+    </script>
+</body>
+</html>
